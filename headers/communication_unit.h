@@ -1,0 +1,79 @@
+#ifndef __COMMUNICATION_H__
+#define __COMMUNICATION_H__
+
+#include "serial_communication.h"
+#include <pthread.h>
+#include <semaphore.h>
+#include <errno.h>
+#include <stdlib.h>
+
+// Start of heading: start of metadata transmission
+#define SOH 0x01
+// Start of text: end of metadata transmission and start of data
+#define STX 0x02 
+// End of text: end of the data
+#define ETX 0x03
+// End of trasmission: the process that control the terminal was terminated
+#define EOT 0x04
+// Acknowledge: acknowledge that the message sent by the terminal was received
+#define ACK 0x06
+
+#define PORT_NAME "/dev/ttyUSB0"
+#define BAUD_RATE 115200
+#define MAX_PROCESS_COUNT 10
+// Timeout in ms for acknowledge
+#define ACK_TIMEOUT 1000
+#define TERMINAL_BUFFER_SIZE 1024
+#define RECEIVE_BUFFER_SIZE 1024
+
+/**
+* @brief Prepares the communication unit
+*
+* Initializes the port and the mutex
+*
+* @return 0 if the initialization is sucessful, -1 if it is not
+*/
+int init_communication_unit();
+
+/**
+* @brief Receives data from the microcontroller
+*
+* Listens to the port by reading from it periodically, extracts messagens
+* from the bytes read and puts the data in the corresponding terminal buffer
+*
+* @return void
+*/
+void* receive_data();
+
+/**
+* @brief Sends data to the microcontroller
+*
+* Given an array of data, sends it to the
+* microcontroller
+*
+* @param data Pointer to the data that will be sent
+* @param pid PID associated with this terminal
+*
+* @return 0 if data is sent sucessfully, -1 if it is not and -2 for ack timeout
+*/
+int send_data(char *data, int pid);
+
+/**
+* @brief Get number of active terminals
+*
+* Get number of active terminals
+*
+* @return Number of active terminals
+*/
+size_t get_terminal_count();
+
+/**
+* @brief Free all resources of the communication unit
+*
+* Destroy mutexes, stop the receiver thread and free the port
+*
+* @return 0 void
+*/
+void close_communication_unit();
+
+#endif
