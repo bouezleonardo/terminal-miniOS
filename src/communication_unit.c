@@ -161,6 +161,53 @@ int extract_data(char *data, int *pid, int len){
   return bytes_extracted;
 }
 
+int build_msg(char *data, char *msg, int pid){
+  // Variable to check the return values of functions
+  int ret_code, len;
+  char pid_string[10];
+  
+  // Get PID string
+  ret_code = sprintf(pid_string, "%d", pid);
+  
+  if(ret_code < 0) return -1;
+  
+  // Check if the data will fit into the message
+  if(strlen(data) > MSG_SIZE - ret_code - 3) return -1;
+  
+  // Reset ret_code
+  ret_code = 0;
+  
+  // Build the message
+  msg[0] = SOH;
+  msg[1] = '\0';
+  
+  // Put PID into msg
+  ret_code = sprintf(msg + 1, "%s", pid_string);
+  if(ret_code < 0) return -1;
+  
+  len = strlen(msg);
+  
+  msg[len] = STX;
+  msg[len+1] = '\0';
+  
+  // Put  into msg
+  ret_code = sprintf(msg + strlen(msg), "%s", data);
+  if(ret_code < 0) return -1;
+  
+  len = strlen(msg);
+  
+  msg[len] = ETX;
+  msg[len+1] = '\0';
+  
+  // Fill the rest of the bytes with SUB characters if needed
+  len = strlen(msg);
+  if(len < MSG_SIZE) memset(msg + len, SUB, MSG_SIZE - len);
+  
+  msg[MSG_SIZE] = '\0';
+  
+  return 0;
+}
+
 void* receive_data(){
   int bytes_read, bytes_extracted, pid, len;
   char data[RECEIVE_BUFFER_SIZE];
@@ -208,7 +255,9 @@ void* receive_data(){
 int send_data(char *data, int pid){
   int ret_code;
   
-  //char *formatted_data = format_data(data, pid);
+  //char msg[MSG_SIZE+1];
+  
+  //build_msg(data, msg, pid);
   
   pthread_mutex_lock(&mutex_send);
   pid_ack = pid;
@@ -277,6 +326,7 @@ int remove_terminal(int pid){
   if(found == 0) return -1;
   
   pthread_mutex_lock(&mutex_arrays);
+  
   // Overwrite positions
   for(size_t j = i;j < count-1;++j){
     buffers[j] = buffers[j+1]; 

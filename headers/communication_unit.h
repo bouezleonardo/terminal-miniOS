@@ -17,14 +17,21 @@
 #define EOT 0x04
 // Acknowledge: acknowledge that the message sent by the terminal was received
 #define ACK 0x06
+// Substitute: substitute character to fill the msg when the size is less than MSG_SIZE
+#define SUB 0x1A
 
 #define PORT_NAME "/dev/ttyUSB0"
 #define BAUD_RATE 115200
 #define MAX_PROCESS_COUNT 10
+
 // Timeout in ms for acknowledge
 #define ACK_TIMEOUT 1000
+
 #define TERMINAL_BUFFER_SIZE 1024
 #define RECEIVE_BUFFER_SIZE 1024
+
+// Amount of bytes the terminals send at time to the microcontroller
+#define MSG_SIZE 32
 
 /**
 * @brief Prepares the communication unit
@@ -57,6 +64,8 @@ void* receive_data();
 * @return 0 if data is sent sucessfully, -1 if it is not and -2 for ack timeout
 */
 int send_data(char *data, int pid);
+
+int add_terminal(char *buffer, sem_t *sem, pthread_mutex_t *mutex, int pid);
 
 /**
 * @brief Get number of active terminals
