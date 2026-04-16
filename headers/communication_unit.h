@@ -43,16 +43,6 @@
 int init_communication_unit();
 
 /**
-* @brief Receives data from the microcontroller
-*
-* Listens to the port by reading from it periodically, extracts messagens
-* from the bytes read and puts the data in the corresponding terminal buffer
-*
-* @return void
-*/
-void* receive_data();
-
-/**
 * @brief Sends data to the microcontroller
 *
 * Given an array of data, sends it to the
@@ -67,6 +57,8 @@ int send_data(char *data, int pid);
 
 int add_terminal(char *buffer, sem_t *sem, pthread_mutex_t *mutex, int pid);
 
+int remove_terminal(int pid);
+
 /**
 * @brief Get number of active terminals
 *
@@ -74,7 +66,16 @@ int add_terminal(char *buffer, sem_t *sem, pthread_mutex_t *mutex, int pid);
 *
 * @return Number of active terminals
 */
-size_t get_terminal_count();
+int get_terminal_count();
+
+/**
+* @brief Get the index where the terminal data is stored
+*
+* Get Get the index where the terminal data is stored
+*
+* @return Index of the data, -1 if there is no terminal with this PID
+*/
+int get_terminal_index(int pid);
 
 /**
 * @brief Free all resources of the communication unit

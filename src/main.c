@@ -1,5 +1,4 @@
 #include "communication_unit.h"
-#include "serial_communication.h"
 
 int main() {  
   pthread_t receiver;
@@ -9,9 +8,7 @@ int main() {
   
   if(ret_code < 0) return -1;
   
-  pthread_create(&receiver, NULL, receive_data, NULL);
-  
-  pthread_join(receiver, NULL);
+  while(1){}
   
   close_communication_unit(); 
   return 0;  

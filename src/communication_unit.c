@@ -1,7 +1,12 @@
 #include "communication_unit.h"
 
+//############################ STATIC VARIABLES ################################
+
 // Buffer to hold incoming data
 static char buffer[RECEIVE_BUFFER_SIZE];
+
+// Receiver thread that receive the messages from the microcontroller
+static pthread_t receiver_thr;
 
 // mutex_send Protect send_data() critical section
 // mutex_arrays Protect add_terminal() and remove_terminal()
@@ -24,15 +29,63 @@ static pthread_mutex_t *terminal_mutexes[MAX_PROCESS_COUNT];
 static char pids[MAX_PROCESS_COUNT];
 
 // Number of terminals
-static size_t count;
+static int count;
 
 // Indicates the microcontroller has received data
 static int ack;
 // Expected PID of the ack
 static int pid_ack;
+// Indicates if a timeout has occurred
+static int timeout;
 
 // Mantains the receiver thread listening to the port
 static int listening;
+
+//##################### STATIC FUNCTION DECLARATIONS ###########################
+
+/**
+* @brief Receives data from the microcontroller
+*
+* Listens to the port by reading from it periodically, extracts messagens
+* from the bytes read and puts the data in the corresponding terminal buffer
+*
+* @return void*
+*/
+static void* receive_data();
+
+/**
+* @brief Extract the data from a message from the microcontroller
+*
+* Extracts the data from a message formatted like SOH <PID> STX <DATA> ETX or 
+* or SOH <PID> ACK or SOH <PID> EOT. These messages are stored in the buffer
+*
+* @return number of bytes in data, -1 if there was an error
+*/
+static int extract_data(char *data, int *pid, int len);
+
+/**
+* @brief Builds a formatted message
+*
+* Builds a message with the data string to send to the microcontroller formatted
+* like SOH <PID> STX <DATA> ETX. The size of the message is fixed by MSG_SIZE.
+* If the formatted message does not acheive MSG_SIZE bytes, the rest of msg is
+* filled with SUB character
+* 
+* @return 0 if the message is built, -1 if there was an error
+*/
+static int build_msg(char *data, char *msg, int pid);
+
+/**
+* @brief Puts the received data into the corresponding terminal buffer
+*
+* Given a string of data and a PID, put it into the corresponding terminal
+* buffer and set the semaphore to signal a receive to the terminal.
+* 
+* @return 0 if the data is put into the buffer, -1 if there was an error
+*/
+static int set_terminal_buffer(char *data, int pid);
+
+//######################## FUNCTION DEFINITIONS ################################
 
 int init_communication_unit(){
   // Return code of the functions
@@ -55,15 +108,106 @@ int init_communication_unit(){
   
   count = 0;
   ack = 0;
+  timeout = 0;
   pid_ack = -1;
   
   // Set the receiver thread to listen to the port
   listening = 1;
   
+  // Initialize receiver thread
+  pthread_create(&receiver_thr, NULL, receive_data, NULL);
+  
   return 0;
 }
 
-int extract_data(char *data, int *pid, int len){
+static void* receive_data(){
+  int bytes_read, bytes_extracted, pid, len;
+  char data[RECEIVE_BUFFER_SIZE];
+
+  // Wait for data
+  len = 0;
+  while(listening){
+    usleep(100);
+    
+    // Reset buffer
+    if(len == RECEIVE_BUFFER_SIZE-1) len = 0;
+    
+    // Read from port
+    bytes_read = read_ascii_response(fd, buffer+len, RECEIVE_BUFFER_SIZE-len);
+    
+    //printf("Buffer(%d): %s", len, buffer);
+    
+    // Length of the buffer
+    len = strlen(buffer);
+    
+    // If no bytes were received
+    if(bytes_read <= 0) continue;
+    
+    // Try to extract data from the bytes received
+    bytes_extracted = extract_data(data, &pid, len);
+    len = strlen(buffer);
+    
+    // If no data was extracted
+    if(bytes_extracted <= 0) continue;
+
+    printf("PID: %d, Data: %s", pid,data);
+    
+    // Check for ack
+    pthread_mutex_lock(&mutex_ack);
+    if(bytes_extracted == 1 && data[0] == ACK && pid == pid_ack && timeout == 0){
+      ack = 1;
+      continue;
+    }
+    pthread_mutex_unlock(&mutex_ack);
+    
+    //TODO Put data in the corresponding terminal buffer
+    //set_terminal_buffer(data, pid);
+  }
+}
+
+int send_data(char *data, int pid){
+  int ret_code;
+  
+  //char msg[MSG_SIZE+1];
+  
+  //build_msg(data, msg, pid);
+  
+  pthread_mutex_lock(&mutex_send);
+  
+  pthread_mutex_lock(&mutex_ack);
+  pid_ack = pid;
+  timeout = 0;
+  ack = 0;
+  pthread_mutex_unlock(&mutex_ack);
+  
+  // Send data to microcontroller
+  ret_code = send_ascii_command(fd, data);
+  
+  // Only waits for acknowledge if data is sucessfully sent
+  if(ret_code != -1){
+    int time_count = 0;
+    
+    // Wait for acknowledge
+    while(ack != 1 && time_count < ACK_TIMEOUT/100){
+      usleep(100);
+      time_count++;
+    }
+    
+    pthread_mutex_lock(&mutex_ack);
+    timeout = 1;
+    
+    // Check if acknowledge has arrived
+    if(ack != 1){
+      ret_code = -2;
+    }
+    pthread_mutex_unlock(&mutex_ack);
+  }
+  pthread_mutex_unlock(&mutex_send);
+  
+  return ret_code;
+}
+
+static int extract_data(char *data, int *pid, int len){
   // Used to know where sections of the message start and end
   int soh_index = -1, stx_index = -1, etx_index = -1;
   
@@ -161,7 +305,7 @@ int extract_data(char *data, int *pid, int len){
   return bytes_extracted;
 }
 
-int build_msg(char *data, char *msg, int pid){
+static int build_msg(char *data, char *msg, int pid){
   // Variable to check the return values of functions
   int ret_code, len;
   char pid_string[10];
@@ -208,88 +352,21 @@ int build_msg(char *data, char *msg, int pid){
   return 0;
 }
 
-void* receive_data(){
-  int bytes_read, bytes_extracted, pid, len;
-  char data[RECEIVE_BUFFER_SIZE];
-
-  // Wait for data
-  len = 0;
-  while(listening){
-    usleep(100);
-    
-    // Reset buffer
-    if(len == RECEIVE_BUFFER_SIZE-1) len = 0;
-    
-    // Read from port
-    bytes_read = read_ascii_response(fd, buffer+len, RECEIVE_BUFFER_SIZE-len);
-    
-    //printf("Buffer(%d): %s", len, buffer);
-    
-    // Length of the buffer
-    len = strlen(buffer);
-    
-    // If no bytes were received
-    if(bytes_read <= 0) continue;
-    
-    // Try to extract data from the bytes received
-    bytes_extracted = extract_data(data, &pid, len);
-    len = strlen(buffer);
-    
-    // If no data was extracted
-    if(bytes_extracted <= 0) continue;
-
-    printf("PID: %d, Data: %s", pid,data);
-    // Check for ack
-    if(bytes_extracted == 1 && data[0] == ACK && pid == pid_ack){
-      pthread_mutex_lock(&mutex_ack);
-      ack = 1;
-      pthread_mutex_unlock(&mutex_ack);
-      continue;
-    }
-    
-    // Put data in the corresponding terminal buffer
-    //set_terminal_buffer(data, pid);
-  }
-}
-
-int send_data(char *data, int pid){
-  int ret_code;
+static int set_terminal_buffer(char *data, int pid){
+  int i;
   
-  //char msg[MSG_SIZE+1];
+  // Get index with this PID
+  i = get_terminal_index(pid);
   
-  //build_msg(data, msg, pid);
+  // If PID is not found
+  if(i == -1) return -1;
   
-  pthread_mutex_lock(&mutex_send);
-  pid_ack = pid;
+  //lock terminal buffer mutex
+  pthread_mutex_lock(terminal_mutexes[i]);
+  //TODO Implement the rest of this function
+  pthread_mutex_unlock(terminal_mutexes[i]);
   
-  // Make sure ack is 0 for this transmission
-  pthread_mutex_lock(&mutex_ack);
-  ack = 0;
-  pthread_mutex_unlock(&mutex_ack);
-  
-  // Send data to microcontroller
-  ret_code = send_ascii_command(fd, data);
-  
-  // Only waits for acknowledge if data is sucessfully sent
-  if(ret_code != -1){
-    int time_count = 0;
-    
-    // Wait for acknowledge
-    while(ack != 1 && time_count < ACK_TIMEOUT/100){
-      usleep(100);
-      time_count++;
-    }
-    
-    pthread_mutex_lock(&mutex_ack);
-    // Check if acknowledge has arrived
-    if(ack != 1){
-      ret_code = -2;
-    }
-    pthread_mutex_unlock(&mutex_ack);
-  }
-  pthread_mutex_unlock(&mutex_send);
-  
-  return ret_code;
+  return 0;
 }
 
 int add_terminal(char *buffer, sem_t *sem, pthread_mutex_t *mutex, int pid){
@@ -310,25 +387,18 @@ int add_terminal(char *buffer, sem_t *sem, pthread_mutex_t *mutex, int pid){
 }
 
 int remove_terminal(int pid){
-  size_t i;
-  int found = 0;
+  int i;
   
-  if(count <= 0) return -1;
+  // Get index with this PID
+  i = get_terminal_index(pid);
   
-  // Searches for the terminal associated with pid
-  for(i = 0;i < count;++i){
-    if(pids[i] == pid){
-       found = 1;
-       break;
-    }
-  }
-  
-  if(found == 0) return -1;
+  // If PID is not found
+  if(i == -1) return -1;
   
   pthread_mutex_lock(&mutex_arrays);
-  
   // Overwrite positions
-  for(size_t j = i;j < count-1;++j){
+  for(int j = i;j < count-1;++j){
+    // TODO Switch for memmove
     buffers[j] = buffers[j+1]; 
     semaphores[j] = semaphores[j+1];
     terminal_mutexes[j] = terminal_mutexes[j+1];
@@ -342,7 +412,27 @@ int remove_terminal(int pid){
   return 0;
 }
 
-size_t get_terminal_count(){return count;}
+int get_terminal_index(int pid){
+  int index, found = 0;
+  
+  if(count <= 0) return -1;
+  
+  pthread_mutex_lock(&mutex_arrays);
+  // Searches for the terminal associated with pid
+  for(index = 0;index < count;++index){
+    if(pids[index] == pid){
+       found = 1;
+       break;
+    }
+  }
+  pthread_mutex_lock(&mutex_arrays);
+  
+  if(found == 0) return -1;
+  
+  return index;
+}
+
+int get_terminal_count(){return count;}
 
 void close_communication_unit(){
   listening = 0;
