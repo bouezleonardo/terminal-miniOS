@@ -2,6 +2,7 @@
 #define __COMMUNICATION_H__
 
 #include "serial_communication.h"
+#include "terminal.h"
 #include <pthread.h>
 #include <semaphore.h>
 #include <errno.h>
@@ -27,7 +28,6 @@
 // Timeout in ms for acknowledge
 #define ACK_TIMEOUT 1000
 
-#define TERMINAL_BUFFER_SIZE 1024
 #define RECEIVE_BUFFER_SIZE 1024
 
 // Amount of bytes the terminals send at time to the microcontroller
@@ -55,8 +55,27 @@ int init_communication_unit();
 */
 int send_data(char *data, int pid);
 
-int add_terminal(char *buffer, sem_t *sem, pthread_mutex_t *mutex, int pid);
+/**
+* @brief Adds a terminal to the terminals array
+*
+* Adds the terminal pointer to the terminals array
+*
+* @param terminal Pointer to the terminal that will be added
+*
+* @return 0 if terminal is added sucessfully, -1 if it is not
+*/
+int add_terminal(Terminal *terminal);
 
+/**
+* @brief Adds a terminal to the terminals array
+*
+* Removes the terminal pointer from the terminals array given a
+* PID
+*
+* @param pid PID of the process associated with the terminal
+*
+* @return 0 if terminal is removed sucessfully, -1 if it is not
+*/
 int remove_terminal(int pid);
 
 /**

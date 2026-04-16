@@ -9,24 +9,15 @@ static char buffer[RECEIVE_BUFFER_SIZE];
 static pthread_t receiver_thr;
 
 // mutex_send Protect send_data() critical section
-// mutex_arrays Protect add_terminal() and remove_terminal()
+// mutex_terminals Protect add_terminal() and remove_terminal()
 // mutex_ack Protect ack to guarantee consistency when a time out occurs
-static pthread_mutex_t mutex_send, mutex_arrays, mutex_ack; 
+static pthread_mutex_t mutex_send, mutex_terminals, mutex_ack; 
 
 // File descriptor for USB device
 static int fd;
 
-// Terminal semaphores array
-static sem_t *semaphores[MAX_PROCESS_COUNT];
-
-// Terminal buffer pointers array
-static char *buffers[MAX_PROCESS_COUNT];
-
-// Terminal buffer mutexes array
-static pthread_mutex_t *terminal_mutexes[MAX_PROCESS_COUNT];
-
-// Terminal PIDs array
-static char pids[MAX_PROCESS_COUNT];
+// Terminal struct array
+static Terminal *terminals[MAX_PROCESS_COUNT];
 
 // Number of terminals
 static int count;
@@ -103,7 +94,7 @@ int init_communication_unit(){
   
   // Initialize mutexes
   pthread_mutex_init(&mutex_send, NULL);
-  pthread_mutex_init(&mutex_arrays, NULL);
+  pthread_mutex_init(&mutex_terminals, NULL);
   pthread_mutex_init(&mutex_ack, NULL);
   
   count = 0;
@@ -168,9 +159,9 @@ static void* receive_data(){
 int send_data(char *data, int pid){
   int ret_code;
   
-  //char msg[MSG_SIZE+1];
+  char msg[MSG_SIZE+1];
   
-  //build_msg(data, msg, pid);
+  build_msg(data, msg, pid);
   
   pthread_mutex_lock(&mutex_send);
   
@@ -180,8 +171,8 @@ int send_data(char *data, int pid){
   ack = 0;
   pthread_mutex_unlock(&mutex_ack);
   
-  // Send data to microcontroller
-  ret_code = send_ascii_command(fd, data);
+  // Send msg to the microcontroller
+  ret_code = send_ascii_command(fd, msg);
   
   // Only waits for acknowledge if data is sucessfully sent
   if(ret_code != -1){
@@ -316,7 +307,8 @@ static int build_msg(char *data, char *msg, int pid){
   if(ret_code < 0) return -1;
   
   // Check if the data will fit into the message
-  if(strlen(data) > MSG_SIZE - ret_code - 3) return -1;
+  // Subtract for to account for the 3 delimiters plus the null terminator
+  if(strlen(data) > MSG_SIZE - ret_code - 4) return -1;
   
   // Reset ret_code
   ret_code = 0;
@@ -353,7 +345,7 @@ static int build_msg(char *data, char *msg, int pid){
 }
 
 static int set_terminal_buffer(char *data, int pid){
-  int i;
+  int ret_code, i, len;
   
   // Get index with this PID
   i = get_terminal_index(pid);
@@ -361,27 +353,36 @@ static int set_terminal_buffer(char *data, int pid){
   // If PID is not found
   if(i == -1) return -1;
   
-  //lock terminal buffer mutex
-  pthread_mutex_lock(terminal_mutexes[i]);
-  //TODO Implement the rest of this function
-  pthread_mutex_unlock(terminal_mutexes[i]);
+  // Lock terminal buffer mutex
+  pthread_mutex_lock(&terminals[i]->mutex_buffer);
   
-  return 0;
+  // Get terminal buffer string length
+  len = strlen(terminals[i]->buffer);
+  
+  // Check if terminal buffer has space available for the data
+  // Subtract 1 to account for the null terminator
+  if(strlen(data) > TERMINAL_BUFFER_SIZE - len - 1) return -1;
+  
+  memcpy(terminals[i]->buffer+len, data, strlen(data));
+  
+  len = strlen(terminals[i]->buffer);
+  terminals[i]->buffer[len] = '\0';
+  
+  // Signals to the terminal that a message was received
+  ret_code = sem_post(&terminals[i]->msg_received);
+
+  pthread_mutex_unlock(&terminals[i]->mutex_buffer);
+  
+  return ret_code;
 }
 
-int add_terminal(char *buffer, sem_t *sem, pthread_mutex_t *mutex, int pid){
+int add_terminal(Terminal *terminal){
   if(count >= MAX_PROCESS_COUNT) return -1;
   
-  pthread_mutex_lock(&mutex_arrays);
-  // Store terminal information in the arrays
-  buffers[count] = buffer; 
-  semaphores[count] = sem;
-  terminal_mutexes[count] = mutex;
-  pids[count] = pid;
-  
-  // Increment count
+  pthread_mutex_lock(&mutex_terminals);
+  terminals[count] = terminal;
   count++;
-  pthread_mutex_unlock(&mutex_arrays);
+  pthread_mutex_unlock(&mutex_terminals);
   
   return 0;
 }
@@ -395,19 +396,13 @@ int remove_terminal(int pid){
   // If PID is not found
   if(i == -1) return -1;
   
-  pthread_mutex_lock(&mutex_arrays);
-  // Overwrite positions
-  for(int j = i;j < count-1;++j){
-    // TODO Switch for memmove
-    buffers[j] = buffers[j+1]; 
-    semaphores[j] = semaphores[j+1];
-    terminal_mutexes[j] = terminal_mutexes[j+1];
-    pids[j] = pids[j+1];
-  }
+  pthread_mutex_lock(&mutex_terminals);
   
-  // Decrement count
+  // Overwrite positions
+  memmove(terminals+i, terminals+i+1, count-i-1);
+  
   count--;
-  pthread_mutex_unlock(&mutex_arrays);
+  pthread_mutex_unlock(&mutex_terminals);
   
   return 0;
 }
@@ -417,15 +412,15 @@ int get_terminal_index(int pid){
   
   if(count <= 0) return -1;
   
-  pthread_mutex_lock(&mutex_arrays);
+  pthread_mutex_lock(&mutex_terminals);
   // Searches for the terminal associated with pid
   for(index = 0;index < count;++index){
-    if(pids[index] == pid){
+    if(terminals[index]->pid == pid){
        found = 1;
        break;
     }
   }
-  pthread_mutex_lock(&mutex_arrays);
+  pthread_mutex_lock(&mutex_terminals);
   
   if(found == 0) return -1;
   
@@ -437,7 +432,7 @@ int get_terminal_count(){return count;}
 void close_communication_unit(){
   listening = 0;
   pthread_mutex_destroy(&mutex_send);
-  pthread_mutex_destroy(&mutex_arrays);
+  pthread_mutex_destroy(&mutex_terminals);
   pthread_mutex_destroy(&mutex_ack);
   close_serial_port(fd);
 }
