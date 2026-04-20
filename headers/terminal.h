@@ -5,17 +5,14 @@
 #include <pthread.h>
 #include <semaphore.h>
 
-#define TERMINAL_BUFFER_SIZE 1024
-
 typedef struct {
-  char buffer[TERMINAL_BUFFER_SIZE]; // Where the data received is stored
-  sem_t msg_received;                // Indicates if a message was received
-  pthread_mutex_t mutex_buffer;      // Protects the access to buffer
-  int pid;                           // PID of the microprocessor process
+  Message msg;           // Shared memory of the terminal
+  pthread_t thr;         // Terminal thread
+  int pid;               // PID of the microprocessor process
 } Terminal;
 
-int init_terminal(int pid);
+int init_terminal(Terminal *terminal, int pid);
 
-void close_terminal();
+void close_terminal(Terminal *terminal);
 
 #endif

@@ -1,4 +1,7 @@
 #include "communication_unit.h"
+#include "serial_communication.h"
+#include <errno.h>
+#include <stdlib.h>
 
 //############################ STATIC VARIABLES ################################
 
@@ -9,18 +12,17 @@ static char buffer[RECEIVE_BUFFER_SIZE];
 static pthread_t receiver_thr;
 
 // mutex_send Protect send_data() critical section
-// mutex_terminals Protect add_terminal() and remove_terminal()
 // mutex_ack Protect ack to guarantee consistency when a time out occurs
-static pthread_mutex_t mutex_send, mutex_terminals, mutex_ack; 
+static pthread_mutex_t mutex_send, mutex_ack; 
+
+// Message struture to send data to Main Thread
+static Message *msg_main;
+
+// Indicates to the Main thread the destination of the received data
+static int *pid_destination;
 
 // File descriptor for USB device
 static int fd;
-
-// Terminal struct array
-static Terminal *terminals[MAX_PROCESS_COUNT];
-
-// Number of terminals
-static int count;
 
 // Indicates the microcontroller has received data
 static int ack;
@@ -67,20 +69,20 @@ static int extract_data(char *data, int *pid, int len);
 static int build_msg(char *data, char *msg, int pid);
 
 /**
-* @brief Puts the received data into the corresponding terminal buffer
+* @brief Put the received data into the Main thread buffer
 *
-* Given a string of data and a PID, put it into the corresponding terminal
-* buffer and set the semaphore to signal a receive to the terminal.
+* Given a string of data and a PID, put it into the Main thread
+* buffer and set the semaphore to signal a receive.
 * 
 * @return 0 if the data is put into the buffer, -1 if there was an error
 */
-static int set_terminal_buffer(char *data, int pid);
+static int set_main_message(char *data, int pid);
 
 //######################## FUNCTION DEFINITIONS ################################
 
-int init_communication_unit(){
+int init_communication_unit(Message *msg, int *pid){
   // Return code of the functions
-  int ret_code;
+  int ret_code = 0;
   
   // Open serial port
   fd = open_serial_port(PORT_NAME);
@@ -94,13 +96,15 @@ int init_communication_unit(){
   
   // Initialize mutexes
   pthread_mutex_init(&mutex_send, NULL);
-  pthread_mutex_init(&mutex_terminals, NULL);
   pthread_mutex_init(&mutex_ack, NULL);
   
-  count = 0;
   ack = 0;
   timeout = 0;
   pid_ack = -1;
+  
+  // Set the Main msg and pid destination
+  msg_main = msg;
+  pid_destination = pid;
   
   // Set the receiver thread to listen to the port
   listening = 1;
@@ -147,12 +151,13 @@ static void* receive_data(){
     pthread_mutex_lock(&mutex_ack);
     if(bytes_extracted == 1 && data[0] == ACK && pid == pid_ack && timeout == 0){
       ack = 1;
+      pthread_mutex_unlock(&mutex_ack);
       continue;
     }
     pthread_mutex_unlock(&mutex_ack);
     
-    //TODO Put data in the corresponding terminal buffer
-    //set_terminal_buffer(data, pid);
+    // Send the data to main thread
+    set_main_message(data, pid);
   }
 }
 
@@ -344,95 +349,41 @@ static int build_msg(char *data, char *msg, int pid){
   return 0;
 }
 
-static int set_terminal_buffer(char *data, int pid){
-  int ret_code, i, len;
+static int set_main_message(char *data, int pid){
+  int ret_code, len;
   
-  // Get index with this PID
-  i = get_terminal_index(pid);
+  // Lock buffer mutex
+  pthread_mutex_lock(&msg_main->mutex_buffer);
   
-  // If PID is not found
-  if(i == -1) return -1;
+  // Get buffer string length
+  len = strlen(msg_main->buffer);
   
-  // Lock terminal buffer mutex
-  pthread_mutex_lock(&terminals[i]->mutex_buffer);
-  
-  // Get terminal buffer string length
-  len = strlen(terminals[i]->buffer);
-  
-  // Check if terminal buffer has space available for the data
+  // Check if buffer has space available for the data
   // Subtract 1 to account for the null terminator
-  if(strlen(data) > TERMINAL_BUFFER_SIZE - len - 1) return -1;
+  if(strlen(data) > MSG_BUFFER_SIZE - len - 1){
+    pthread_mutex_unlock(&msg_main->mutex_buffer);
+    return -1;
+  }
   
-  memcpy(terminals[i]->buffer+len, data, strlen(data));
+  memcpy(msg_main->buffer, data, strlen(data));
   
-  len = strlen(terminals[i]->buffer);
-  terminals[i]->buffer[len] = '\0';
+  len = strlen(msg_main->buffer);
+  msg_main->buffer[len] = '\0';
   
-  // Signals to the terminal that a message was received
-  ret_code = sem_post(&terminals[i]->msg_received);
+  // PID of the destination
+  *pid_destination = pid;
+  
+  // Signals that a message was received
+  ret_code = sem_post(&msg_main->msg_received);
 
-  pthread_mutex_unlock(&terminals[i]->mutex_buffer);
+  pthread_mutex_unlock(&msg_main->mutex_buffer);
   
   return ret_code;
 }
 
-int add_terminal(Terminal *terminal){
-  if(count >= MAX_PROCESS_COUNT) return -1;
-  
-  pthread_mutex_lock(&mutex_terminals);
-  terminals[count] = terminal;
-  count++;
-  pthread_mutex_unlock(&mutex_terminals);
-  
-  return 0;
-}
-
-int remove_terminal(int pid){
-  int i;
-  
-  // Get index with this PID
-  i = get_terminal_index(pid);
-  
-  // If PID is not found
-  if(i == -1) return -1;
-  
-  pthread_mutex_lock(&mutex_terminals);
-  
-  // Overwrite positions
-  memmove(terminals+i, terminals+i+1, count-i-1);
-  
-  count--;
-  pthread_mutex_unlock(&mutex_terminals);
-  
-  return 0;
-}
-
-int get_terminal_index(int pid){
-  int index, found = 0;
-  
-  if(count <= 0) return -1;
-  
-  pthread_mutex_lock(&mutex_terminals);
-  // Searches for the terminal associated with pid
-  for(index = 0;index < count;++index){
-    if(terminals[index]->pid == pid){
-       found = 1;
-       break;
-    }
-  }
-  pthread_mutex_lock(&mutex_terminals);
-  
-  if(found == 0) return -1;
-  
-  return index;
-}
-
-int get_terminal_count(){return count;}
-
 void close_communication_unit(){
   listening = 0;
   pthread_mutex_destroy(&mutex_send);
-  pthread_mutex_destroy(&mutex_terminals);
   pthread_mutex_destroy(&mutex_ack);
   close_serial_port(fd);
 }

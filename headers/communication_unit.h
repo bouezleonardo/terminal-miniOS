@@ -1,12 +1,7 @@
 #ifndef __COMMUNICATION_H__
 #define __COMMUNICATION_H__
 
-#include "serial_communication.h"
-#include "terminal.h"
-#include <pthread.h>
-#include <semaphore.h>
-#include <errno.h>
-#include <stdlib.h>
+#include "message.h"
 
 // Start of heading: start of metadata transmission
 #define SOH 0x01
@@ -40,7 +35,7 @@
 *
 * @return 0 if the initialization is sucessful, -1 if it is not
 */
-int init_communication_unit();
+int init_communication_unit(Message *msg, int *pid);
 
 /**
 * @brief Sends data to the microcontroller
@@ -54,47 +49,6 @@ int init_communication_unit();
 * @return 0 if data is sent sucessfully, -1 if it is not and -2 for ack timeout
 */
 int send_data(char *data, int pid);
-
-/**
-* @brief Adds a terminal to the terminals array
-*
-* Adds the terminal pointer to the terminals array
-*
-* @param terminal Pointer to the terminal that will be added
-*
-* @return 0 if terminal is added sucessfully, -1 if it is not
-*/
-int add_terminal(Terminal *terminal);
-
-/**
-* @brief Adds a terminal to the terminals array
-*
-* Removes the terminal pointer from the terminals array given a
-* PID
-*
-* @param pid PID of the process associated with the terminal
-*
-* @return 0 if terminal is removed sucessfully, -1 if it is not
-*/
-int remove_terminal(int pid);
-
-/**
-* @brief Get number of active terminals
-*
-* Get number of active terminals
-*
-* @return Number of active terminals
-*/
-int get_terminal_count();
-
-/**
-* @brief Get the index where the terminal data is stored
-*
-* Get Get the index where the terminal data is stored
-*
-* @return Index of the data, -1 if there is no terminal with this PID
-*/
-int get_terminal_index(int pid);
 
 /**
 * @brief Free all resources of the communication unit
