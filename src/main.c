@@ -90,19 +90,19 @@ int main(){
   
   printf("\n|MAIN THREAD CONTROL|\n");
   while(strcmp(input, "exit") != 0){
-    usleep(1000000);
+    usleep(100000);
     
     //scanf("%49[^\n]", input);
     
     // Try wait on the semaphore
     ret_code = sem_trywait(&msg.msg_received);
     
-    pthread_mutex_lock(&msg.mutex_buffer);
     // If the receiver thread has put data in the buffer
     if(ret_code == 0){
+      pthread_mutex_lock(&msg.mutex_buffer);
       printf("\nMSG(%d): %s", pid, msg.buffer);
+      pthread_mutex_unlock(&msg.mutex_buffer);
     }
-    pthread_mutex_unlock(&msg.mutex_buffer);
   }
   
   close_communication_unit(); 

@@ -122,7 +122,7 @@ static void* receive_data(){
   // Wait for data
   len = 0;
   while(listening){
-    usleep(100);
+    usleep(100000);
     
     // Reset buffer
     if(len == RECEIVE_BUFFER_SIZE-1) len = 0;
