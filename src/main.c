@@ -67,12 +67,7 @@ int main(){
   count = 0;
   ret_code = init_message(&msg);
   
-  printf("\n EAGAIN: %d", EAGAIN);
-  printf("\n EINTR: %d", EINTR);
-  printf("\n EINVAL: %d", EINVAL);
-  printf("\n ETIMEDOUT: %d", ETIMEDOUT);
-  
-  if(errno != 0 || ret_code != 0){
+  if(ret_code != 0){
     perror("Failed to initialize Main thread");
     return -1;
   }
@@ -85,14 +80,9 @@ int main(){
     return -1;
   }
   
-  // Add a terminal for testing
-  //add_terminal(5);
-  
   printf("\n|MAIN THREAD CONTROL|\n");
   while(strcmp(input, "exit") != 0){
     usleep(100000);
-    
-    //scanf("%49[^\n]", input);
     
     // Try wait on the semaphore
     ret_code = sem_trywait(&msg.msg_received);
