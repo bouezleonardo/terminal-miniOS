@@ -64,24 +64,20 @@ int send_ascii_command(int fd, const char *command){
     perror("Failed to write to serial port");
     return -1;
   }
-  //printf("Sent: %s (bytes: %zd)\n", command, bytes_written);
   return 0;
 }
 
 int read_ascii_response(int fd, char *buffer, size_t buffer_size){
-  size_t bytes_read = read(fd, buffer, buffer_size - 1); // -1 for \0
+  ssize_t bytes_read = read(fd, buffer, buffer_size - 1); // -1 for \0
   
   if(bytes_read == -1){
     perror("Failed to read from serial port");
     return -1;
   }
-  if(bytes_read == 0){
-    //printf("No data received\n");
-    return 0;
-  }
+  if(bytes_read == 0) return 0;
+
   buffer[bytes_read] = '\0'; // Last data position
-  //printf("Received: %s (bytes: %zd)\n", buffer, bytes_read);
-  printf("\n");
+  //printf("\n");
   return bytes_read;  
 }
 

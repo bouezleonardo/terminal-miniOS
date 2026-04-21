@@ -94,6 +94,8 @@ int init_communication_unit(Message *msg, int *pid){
   
   if(ret_code == -1) return -1;
   
+  buffer[RECEIVE_BUFFER_SIZE-1] = '\0';
+  
   // Initialize mutexes
   pthread_mutex_init(&mutex_send, NULL);
   pthread_mutex_init(&mutex_ack, NULL);
@@ -117,23 +119,28 @@ int init_communication_unit(Message *msg, int *pid){
 
 static void* receive_data(){
   int bytes_read, bytes_extracted, pid, len;
-  char data[RECEIVE_BUFFER_SIZE];
+  char str_read[RECEIVE_BUFFER_SIZE], data[RECEIVE_BUFFER_SIZE];
 
   // Wait for data
   len = 0;
   while(listening){
-    usleep(100000);
+    usleep(100);
     
     // Reset buffer
-    if(len == RECEIVE_BUFFER_SIZE-1) len = 0;
+    if(len >= RECEIVE_BUFFER_SIZE-1) len = 0;
     
     // Read from port
-    bytes_read = read_ascii_response(fd, buffer+len, RECEIVE_BUFFER_SIZE-len);
+    bytes_read = read_ascii_response(fd, str_read, RECEIVE_BUFFER_SIZE);
     
-    //printf("Buffer(%d): %s", len, buffer);
+    if(bytes_read < RECEIVE_BUFFER_SIZE-len-1 && bytes_read != -1){  
+      memcpy(buffer+len, str_read, bytes_read);
+      buffer[bytes_read + len]='\0';
+      len = strlen(buffer);
+    }
     
-    // Length of the buffer
-    len = strlen(buffer);
+    str_read[0] = '\0';
+    
+    //printf("\nLEN: %d\nBUFFER:%s",len, buffer);
     
     // If no bytes were received
     if(bytes_read <= 0) continue;
@@ -144,8 +151,6 @@ static void* receive_data(){
     
     // If no data was extracted
     if(bytes_extracted <= 0) continue;
-
-    printf("PID: %d, Data: %s", pid,data);
     
     // Check for ack
     pthread_mutex_lock(&mutex_ack);
@@ -158,6 +163,8 @@ static void* receive_data(){
     
     // Send the data to main thread
     set_main_message(data, pid);
+    
+    data[0] = '\0';
   }
 }
 
@@ -225,6 +232,7 @@ static int extract_data(char *data, int *pid, int len){
     }
   }
   
+  // If there is no SOH
   if(soh_index == -1) return -1;
   
   pid_start = soh_index + 1;
@@ -233,7 +241,6 @@ static int extract_data(char *data, int *pid, int len){
   for(int i = soh_index + 1;i < len;++i){
     if(buffer[i] == ACK || buffer[i] == EOT) {
       data[0] = buffer[i];
-      data[1] = '\0';
     
       bytes_extracted = 1;
       
@@ -288,15 +295,23 @@ static int extract_data(char *data, int *pid, int len){
     bytes_extracted =  (etx_index-1) - (stx_index+1) + 1;
     
     strncpy(data, buffer + stx_index + 1, bytes_extracted);
-    data[bytes_extracted] = '\0';
     
     msg_size += 2;
   }
   
+  data[bytes_extracted] = '\0';
+  
   msg_size += pid_length + bytes_extracted;
   
   // Overwrite the message from the buffer
-  memmove(buffer+soh_index, buffer+msg_size, len - msg_size + 1);
+  int data_len = len - msg_size - soh_index;
+  char buffer_string[data_len+1];
+  
+  memcpy(buffer_string, buffer + soh_index + msg_size, data_len);
+  buffer_string[data_len] = '\0';
+  
+  memcpy(buffer, buffer_string, data_len);
+  buffer[data_len] = '\0';
   
   return bytes_extracted;
 }
@@ -350,8 +365,15 @@ static int build_msg(char *data, char *msg, int pid){
 }
 
 static int set_main_message(char *data, int pid){
-  int ret_code, len;
+  int sval, ret_code, len;
   
+  // Avoid overwriting a message that was not read yet
+  sem_getvalue(&msg_main->msg_received, &sval);
+  while(sval != 0){
+    //usleep(100000);
+    sem_getvalue(&msg_main->msg_received, &sval);
+  }
+   
   // Lock buffer mutex
   pthread_mutex_lock(&msg_main->mutex_buffer);
   
@@ -366,9 +388,7 @@ static int set_main_message(char *data, int pid){
   }
   
   memcpy(msg_main->buffer, data, strlen(data));
-  
-  len = strlen(msg_main->buffer);
-  msg_main->buffer[len] = '\0';
+  msg_main->buffer[strlen(data)] = '\0';
   
   // PID of the destination
   *pid_destination = pid;

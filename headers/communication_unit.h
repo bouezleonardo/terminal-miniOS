@@ -23,7 +23,7 @@
 // Timeout in ms for acknowledge
 #define ACK_TIMEOUT 1000
 
-#define RECEIVE_BUFFER_SIZE 1024
+#define RECEIVE_BUFFER_SIZE 4096
 
 // Amount of bytes the terminals send at time to the microcontroller
 #define MSG_SIZE 32
