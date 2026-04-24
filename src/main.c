@@ -47,7 +47,6 @@ static int get_terminal_index(int pid);
 * @brief Puts the received data into the corresponding terminal buffer
 *
 * Given a string of data and a PID, put it into the corresponding terminal
-* buffer and set the semaphore to signal a receive to the terminal.
 * 
 * @return 0 if the data is put into the buffer, -1 if there was an error
 */
@@ -82,15 +81,19 @@ int main(){
   
   printf("\n|MAIN THREAD CONTROL|\n");
   while(strcmp(input, "exit") != 0){
-    // Try wait on the semaphore
-    ret_code = sem_wait(&msg.msg_received);
+    pthread_mutex_lock(&msg.mutex_buffer);
     
-    // If the receiver thread has put data in the buffer
+    if(msg.msg_received == 0) ret_code = pthread_cond_wait(&msg.cond_received, &msg.mutex_buffer);
+
     if(ret_code == 0){
-      pthread_mutex_lock(&msg.mutex_buffer);
       printf("\n\nMSG(%d):%s\n", pid, msg.buffer);
-      pthread_mutex_unlock(&msg.mutex_buffer);
+      send_data("oi", 4);
     }
+    pthread_mutex_unlock(&msg.mutex_buffer);
+    
+    msg.msg_received = 0;
+    (void) pthread_cond_signal(&msg.cond_received);
+    
   }
   
   close_communication_unit(); 
@@ -100,31 +103,7 @@ int main(){
 static int set_terminal_message(char *data, int pid){
   int ret_code, i, len;
   
-  // Get index with this PID
-  i = get_terminal_index(pid);
   
-  // If PID is not found
-  if(i == -1) return -1;
-  
-  // Lock terminal buffer mutex
-  pthread_mutex_lock(&terminals[i].msg.mutex_buffer);
-  
-  // Get terminal buffer string length
-  len = strlen(terminals[i].msg.buffer);
-  
-  // Check if terminal buffer has space available for the data
-  // Subtract 1 to account for the null terminator
-  if(strlen(data) > MSG_BUFFER_SIZE - len - 1) return -1;
-  
-  memcpy(terminals[i].msg.buffer+len, data, strlen(data));
-  
-  len = strlen(terminals[i].msg.buffer);
-  terminals[i].msg.buffer[len] = '\0';
-  
-  // Signals to the terminal that a message was received
-  ret_code = sem_post(&terminals[i].msg.msg_received);
-
-  pthread_mutex_unlock(&terminals[i].msg.mutex_buffer);
   
   return ret_code;
 }

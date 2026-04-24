@@ -118,29 +118,34 @@ int init_communication_unit(Message *msg, int *pid){
 }
 
 static void* receive_data(){
-  int bytes_read, bytes_extracted, pid, len;
+  int bytes_received, bytes_read, bytes_extracted, pid, len;
   char str_read[RECEIVE_BUFFER_SIZE], data[RECEIVE_BUFFER_SIZE];
 
   // Wait for data
   len = 0;
   while(listening){
-    usleep(100);
+    usleep(100000);
     
     // Reset buffer
-    if(len >= RECEIVE_BUFFER_SIZE-1) len = 0;
-    
+    if(len >= RECEIVE_BUFFER_SIZE-1){
+      len = 0;
+      buffer[0] = '\0';
+    }
     // Read from port
     bytes_read = read_ascii_response(fd, str_read, RECEIVE_BUFFER_SIZE);
     
-    if(bytes_read < RECEIVE_BUFFER_SIZE-len-1 && bytes_read != -1){  
-      memcpy(buffer+len, str_read, bytes_read);
-      buffer[bytes_read + len]='\0';
+    if(bytes_read != -1){  
+      if(bytes_read < RECEIVE_BUFFER_SIZE-len-1) bytes_received = bytes_read;
+      else bytes_received = RECEIVE_BUFFER_SIZE-len-1;
+      
+      memcpy(buffer+len, str_read, bytes_received);
+      buffer[bytes_received + len]='\0';
       len = strlen(buffer);
     }
     
     str_read[0] = '\0';
     
-    //printf("\nLEN: %d\nBUFFER:%s",len, buffer);
+    printf("\nLEN(%d) BUFF:%s",len, buffer);
     
     // If no bytes were received
     if(bytes_read <= 0) continue;
@@ -166,6 +171,8 @@ static void* receive_data(){
     
     data[0] = '\0';
   }
+  
+  return NULL;
 }
 
 int send_data(char *data, int pid){
@@ -250,6 +257,8 @@ static int extract_data(char *data, int *pid, int len){
       stx_index = i;
       pid_end = i - 1;
       break;
+    }else if(buffer[i] == SOH){
+      break; // If there is another SOH in sequence
     }
   }
   
@@ -262,6 +271,8 @@ static int extract_data(char *data, int *pid, int len){
       if(buffer[i] == ETX){
         etx_index = i;
         break;
+      }else if(buffer[i] == STX){
+        break; // If there is another STX in sequence
       }
     }
     if(etx_index == -1) return -1;
@@ -365,38 +376,32 @@ static int build_msg(char *data, char *msg, int pid){
 }
 
 static int set_main_message(char *data, int pid){
-  int sval, ret_code, len;
-  
-  // Avoid overwriting a message that was not read yet
-  sem_getvalue(&msg_main->msg_received, &sval);
-  while(sval != 0){
-    //usleep(100000);
-    sem_getvalue(&msg_main->msg_received, &sval);
-  }
+  int ret_code = 0;
    
-  // Lock buffer mutex
   pthread_mutex_lock(&msg_main->mutex_buffer);
   
-  // Get buffer string length
-  len = strlen(msg_main->buffer);
+  // Wait if there there is still a message to be read
+  if(msg_main->msg_received == 1){
+    ret_code = pthread_cond_wait(&msg_main->cond_received, &msg_main->mutex_buffer);
+  }
   
-  // Check if buffer has space available for the data
-  // Subtract 1 to account for the null terminator
-  if(strlen(data) > MSG_BUFFER_SIZE - len - 1){
+  if(ret_code != 0){
     pthread_mutex_unlock(&msg_main->mutex_buffer);
     return -1;
   }
   
-  memcpy(msg_main->buffer, data, strlen(data));
-  msg_main->buffer[strlen(data)] = '\0';
-  
   // PID of the destination
   *pid_destination = pid;
+  pthread_mutex_unlock(&msg_main->mutex_buffer);
+  
+  // Overwrite Main thread buffer (append = 0)
+  ret_code = write_message(msg_main, data, 0);
+  
+  // Change msg_received
+  msg_main->msg_received = 1;
   
   // Signals that a message was received
-  ret_code = sem_post(&msg_main->msg_received);
-
-  pthread_mutex_unlock(&msg_main->mutex_buffer);
+  ret_code = pthread_cond_signal(&msg_main->cond_received);
   
   return ret_code;
 }

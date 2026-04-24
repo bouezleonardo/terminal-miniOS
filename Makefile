@@ -6,17 +6,20 @@ OBJS = $(SOURCES:.c=.o)
 # Target final executable
 TARGET = terminal
 
+# C code flags
+CFLAGS = -Wall #-Werror
+
 # Generate preprocessed files
 %.i : %.c
-	gcc -E $(HEADERS) $< -o $@
+	gcc -E $(CFLAGS) $(HEADERS) $< -o $@
 	
 # Generate assembly files
 %.s : %.c
-	gcc -S $(HEADERS) $< -o $@
+	gcc -S $(CFLAGS) $(HEADERS) $< -o $@
 
 # Generate object files (not linking)
 %.o : %.c
-	gcc -c $(HEADERS) $< -o $@
+	gcc -c $(CFLAGS) $(HEADERS) $< -o $@
 
 # Compile all (not linking)
 .PHONY: compile-all
@@ -24,7 +27,7 @@ compile-all: $(OBJS)
 
 # Link everything and show sizes of memory segments
 $(TARGET).out: $(OBJS)
-	$(CC) $(OBJS) -o $@
+	$(CC) $(CFLAGS) $(OBJS) -o $@
 
 # Build into a final executable
 .PHONY: build

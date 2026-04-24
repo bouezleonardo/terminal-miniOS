@@ -31,7 +31,7 @@
 /**
 * @brief Prepares the communication unit
 *
-* Initializes the port and the mutex
+* Initializes the port and the mutexes
 *
 * @return 0 if the initialization is sucessful, -1 if it is not
 */
@@ -55,7 +55,7 @@ int send_data(char *data, int pid);
 *
 * Destroy mutexes, stop the receiver thread and free the port
 *
-* @return 0 void
+* @return void
 */
 void close_communication_unit();
 
