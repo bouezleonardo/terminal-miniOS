@@ -74,13 +74,7 @@ int sread_message(Message *msg, char *data, int size){
   
   pthread_mutex_lock(&msg->mutex_buffer);
   // Wait if there is no message
-  if(msg->msg_received == 0) ret_code = pthread_cond_wait(&msg->cond_received, &msg->mutex_buffer);
-
-  if(ret_code != 0) {
-    pthread_mutex_unlock(&msg->mutex_buffer);
-    pthread_cond_signal(&msg->cond_received);
-    return -1;
-  }
+  while(msg->msg_received == 0) pthread_cond_wait(&msg->cond_received, &msg->mutex_buffer);
   
   // Incates the message was read
   msg->msg_received = 0;
@@ -102,13 +96,8 @@ int swrite_message(Message *msg, char *data){
   pthread_mutex_lock(&msg->mutex_buffer);
   
   // Wait until the message is read
-  if(msg->msg_received == 1) ret_code = pthread_cond_wait(&msg->cond_received, &msg->mutex_buffer);
+  while(msg->msg_received == 1) ret_code = pthread_cond_wait(&msg->cond_received, &msg->mutex_buffer);
   
-  if(ret_code != 0) {
-    pthread_mutex_unlock(&msg->mutex_buffer);
-    pthread_cond_signal(&msg->cond_received);
-    return -1;
-  }
   // Incates the data was written
   msg->msg_received = 1;
   

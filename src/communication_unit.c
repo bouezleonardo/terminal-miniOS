@@ -44,7 +44,7 @@ static int listening;
 *
 * @return void*
 */
-static void* receive_data();
+static void* receive_data(void *arg);
 
 /**
 * @brief Extract the data from a message from the microcontroller
@@ -91,7 +91,7 @@ static void overwrite_buffer(int start, int end, int *len);
 
 //######################## FUNCTION DEFINITIONS ################################
 
-int init_communication_unit(Message *msg, int *pid){
+int init_communication_unit(){
   // Return code of the functions
   int ret_code = 0;
   
@@ -115,26 +115,35 @@ int init_communication_unit(Message *msg, int *pid){
   timeout = 0;
   pid_ack = -1;
   
-  // Set the Main msg and pid destination
-  msg_main = msg;
-  pid_destination = pid;
-  
   // Set the receiver thread to listen to the port
   listening = 1;
   
   // Initialize receiver thread
-  pthread_create(&receiver_thr, NULL, receive_data, NULL);
+  ret_code = pthread_create(&receiver_thr, NULL, receive_data, NULL);
+  
+  if(ret_code != 0) return -1;
   
   return 0;
 }
 
-static void* receive_data(){
+void set_communication_msg(Message *msg){
+  // Set the Main msg and pid destination
+  msg_main = msg;
+}
+
+void set_communication_pid(int *pid){
+  // Set the pid destination
+  pid_destination = pid;
+}
+
+static void* receive_data(void *arg){
   int bytes_received, bytes_read, bytes_extracted, pid, len;
   char str_read[RECEIVE_BUFFER_SIZE], data[RECEIVE_BUFFER_SIZE];
 
   // Wait for data
   len = 0;
   bytes_read = 0;
+  
   while(listening){
     // Read from port
     if(len < RECEIVE_BUFFER_SIZE){
@@ -154,11 +163,11 @@ static void* receive_data(){
     }
     
     str_read[0] = '\0';
-    /*
-    printf("\nLEN(%d):", len);
+    
+    /*printf("\nLEN(%d):", len);
     fwrite(buffer, 1, len, stdout);
-    printf("\n");
-    */
+    printf("\n");*/
+
     // If no bytes were received
     if(bytes_read <= 0) continue;
     
@@ -259,7 +268,10 @@ static int extract_data(char *data, int *pid, int *len){
   }
   
   // If there is no SOH
-  if(soh_index == -1) return -1;
+  if(soh_index == -1){
+    *len = 0;
+    return -1;
+  }
   
   pid_start = soh_index + 1;
   
@@ -409,14 +421,7 @@ static int set_main_message(char *data, int pid){
   pthread_mutex_lock(&msg_main->mutex_buffer);
   
   // Wait if there there is still a message to be read
-  if(msg_main->msg_received == 1){
-    ret_code = pthread_cond_wait(&msg_main->cond_received, &msg_main->mutex_buffer);
-  }
-  
-  if(ret_code != 0){
-    pthread_mutex_unlock(&msg_main->mutex_buffer);
-    return -1;
-  }
+  while(msg_main->msg_received == 1) pthread_cond_wait(&msg_main->cond_received, &msg_main->mutex_buffer);
   
   // PID of the destination
   *pid_destination = pid;

@@ -18,7 +18,6 @@
 
 #define PORT_NAME "/dev/ttyUSB0"
 #define BAUD_RATE 115200
-#define MAX_PROCESS_COUNT 10
 
 // Timeout in ms for acknowledge
 #define ACK_TIMEOUT 1000
@@ -35,7 +34,11 @@
 *
 * @return 0 if the initialization is sucessful, -1 if it is not
 */
-int init_communication_unit(Message *msg, int *pid);
+int init_communication_unit();
+
+void set_communication_msg(Message *msg);
+
+void set_communication_pid(int *pid);
 
 /**
 * @brief Sends data to the microcontroller

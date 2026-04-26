@@ -7,7 +7,7 @@ int open_serial_port(const char *port_name){
   int fd = open(port_name, O_RDWR | O_NOCTTY);
   
   if(fd == -1){
-    perror("Failed to open serial port");
+    perror("\n[Serial] Failed to open serial port");
     return -1;
   }
   return fd;
@@ -19,7 +19,7 @@ int configure_serial_port(int fd, speed_t baud_rate){
   
   // Get terminal attributes
   if(tcgetattr(fd, &tty) != 0){
-    perror("Failed to get terminal attributes");
+    perror("\n[Serial] Failed to get terminal attributes");
     return -1;
   }
   
@@ -48,7 +48,7 @@ int configure_serial_port(int fd, speed_t baud_rate){
   
   // Apply settings immediately
   if(tcsetattr(fd, TCSANOW, &tty) != 0){
-    perror("Failed to configure terminal immediately");
+    perror("\n[Serial] Failed to configure terminal immediately");
     return -1;
   }
   
@@ -61,7 +61,7 @@ int configure_serial_port(int fd, speed_t baud_rate){
 int send_ascii_command(int fd, const char *command){
   ssize_t bytes_written = write(fd, command, strlen(command));
   if(bytes_written == -1){
-    perror("Failed to write to serial port");
+    perror("\n[Serial] Failed to write to serial port");
     return -1;
   }
   return 0;
@@ -71,13 +71,13 @@ int read_ascii_response(int fd, char *buffer, size_t buffer_size){
   ssize_t bytes_read = read(fd, buffer, buffer_size - 1); // -1 for \0
   
   if(bytes_read == -1){
-    perror("Failed to read from serial port");
+    perror("\n[Serial] Failed to read from serial port");
     return -1;
   }
   if(bytes_read == 0) return 0;
 
   buffer[bytes_read] = '\0'; // Last data position
-  //printf("\n");
+  
   return bytes_read;  
 }
 
