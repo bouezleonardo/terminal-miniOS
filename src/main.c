@@ -57,7 +57,7 @@ int main(){
   Message msg;
   
   // Input from the user to the Main thread
-  char input[50];
+  char input[50], data[MSG_BUFFER_SIZE];
   
   // Return codes and pid
   int ret_code, pid;
@@ -81,19 +81,9 @@ int main(){
   
   printf("\n|MAIN THREAD CONTROL|\n");
   while(strcmp(input, "exit") != 0){
-    pthread_mutex_lock(&msg.mutex_buffer);
+    ret_code = sread_message(&msg, data, MSG_BUFFER_SIZE);
     
-    if(msg.msg_received == 0) ret_code = pthread_cond_wait(&msg.cond_received, &msg.mutex_buffer);
-
-    if(ret_code == 0){
-      printf("\n\nMSG(%d):%s\n", pid, msg.buffer);
-      send_data("oi", 4);
-    }
-    pthread_mutex_unlock(&msg.mutex_buffer);
-    
-    msg.msg_received = 0;
-    (void) pthread_cond_signal(&msg.cond_received);
-    
+    if(ret_code != -1) printf("\nMSG(%d):%s\n", pid, data);
   }
   
   close_communication_unit(); 

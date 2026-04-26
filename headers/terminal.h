@@ -5,6 +5,10 @@
 #include <pthread.h>
 #include <semaphore.h>
 
+/**
+ * @struct Terminal
+ * @brief Represents a terminal
+ */
 typedef struct {
   Message msg;           // Shared memory of the terminal
   pthread_t thr;         // Terminal thread

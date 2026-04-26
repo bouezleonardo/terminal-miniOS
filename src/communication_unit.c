@@ -52,9 +52,9 @@ static void* receive_data();
 * Extracts the data from a message formatted like SOH <PID> STX <DATA> ETX or 
 * or SOH <PID> ACK or SOH <PID> EOT. These messages are stored in the buffer
 *
-* @return number of bytes in data, -1 if there was an error
+* @return number of bytes in data, negative number if there was an error
 */
-static int extract_data(char *data, int *pid, int len);
+static int extract_data(char *data, int *pid, int *len);
 
 /**
 * @brief Builds a formatted message
@@ -77,6 +77,17 @@ static int build_msg(char *data, char *msg, int pid);
 * @return 0 if the data is put into the buffer, -1 if there was an error
 */
 static int set_main_message(char *data, int pid);
+
+/**
+* @brief Ovewrite positions of the buffer
+*
+* Given a start index, an end index and a pointer to the buffers length
+* overwrites the positions starting in the start index with the data in
+* in the positions between end and length - end
+* 
+* @return void
+*/
+static void overwrite_buffer(int start, int end, int *len);
 
 //######################## FUNCTION DEFINITIONS ################################
 
@@ -123,36 +134,36 @@ static void* receive_data(){
 
   // Wait for data
   len = 0;
+  bytes_read = 0;
   while(listening){
-    usleep(100000);
-    
-    // Reset buffer
-    if(len >= RECEIVE_BUFFER_SIZE-1){
-      len = 0;
-      buffer[0] = '\0';
-    }
     // Read from port
-    bytes_read = read_ascii_response(fd, str_read, RECEIVE_BUFFER_SIZE);
+    if(len < RECEIVE_BUFFER_SIZE){
+      bytes_read = read_ascii_response(fd, str_read, RECEIVE_BUFFER_SIZE);
+    }
     
-    if(bytes_read != -1){  
-      if(bytes_read < RECEIVE_BUFFER_SIZE-len-1) bytes_received = bytes_read;
-      else bytes_received = RECEIVE_BUFFER_SIZE-len-1;
+    if(bytes_read != -1 && bytes_read != 0){
+      // Put the minimum amount of bytes between bytes_read and the free space
+      if(bytes_read <= RECEIVE_BUFFER_SIZE-len){
+        bytes_received = bytes_read; 
+      }else{
+        bytes_received = RECEIVE_BUFFER_SIZE-len;
+      }
       
-      memcpy(buffer+len, str_read, bytes_received);
-      buffer[bytes_received + len]='\0';
-      len = strlen(buffer);
+      memmove(buffer+len, str_read, bytes_received);
+      len += bytes_received;
     }
     
     str_read[0] = '\0';
-    
-    printf("\nLEN(%d) BUFF:%s",len, buffer);
-    
+    /*
+    printf("\nLEN(%d):", len);
+    fwrite(buffer, 1, len, stdout);
+    printf("\n");
+    */
     // If no bytes were received
     if(bytes_read <= 0) continue;
     
     // Try to extract data from the bytes received
-    bytes_extracted = extract_data(data, &pid, len);
-    len = strlen(buffer);
+    bytes_extracted = extract_data(data, &pid, &len);
     
     // If no data was extracted
     if(bytes_extracted <= 0) continue;
@@ -217,22 +228,30 @@ int send_data(char *data, int pid){
   return ret_code;
 }
 
-static int extract_data(char *data, int *pid, int len){
+static void overwrite_buffer(int start, int end, int *len){
+  int remainder = *len - (end + 1);
+  memmove(buffer + start, buffer + end + 1, remainder);
+  *len = remainder;
+}
+
+static int extract_data(char *data, int *pid, int *len){
   // Used to know where sections of the message start and end
-  int soh_index = -1, stx_index = -1, etx_index = -1;
+  int soh_index = -1, stx_index = -1, etx_index = -1, read_index = 0;
+  
+  // Check if the data is really just incomplete or inconsistent
+  int inconsistent = 0;
   
   // Used to find the PID
   int pid_start = -1, pid_end = -1, pid_length;
   long int aux;
   
   // Amount of bytes extracted (size of data that will go to the terminal)
-  // Total message size (bytes extracted + delimiters + pid)
-  int bytes_extracted = 0, msg_size = 1;
+  int bytes_extracted = 0;
   
   char pid_string[16];
   
   // Searches the buffer for SOH
-  for(int i = 0;i < len;++i){
+  for(int i = 0;i < *len;++i){
     if(buffer[i] == SOH){
       soh_index = i;
       break;
@@ -245,7 +264,8 @@ static int extract_data(char *data, int *pid, int len){
   pid_start = soh_index + 1;
   
   // Searches the buffer for STX, ACK or EOT
-  for(int i = soh_index + 1;i < len;++i){
+  for(int i = soh_index + 1;i < *len;++i){
+    read_index = i;
     if(buffer[i] == ACK || buffer[i] == EOT) {
       data[0] = buffer[i];
     
@@ -258,32 +278,45 @@ static int extract_data(char *data, int *pid, int len){
       pid_end = i - 1;
       break;
     }else if(buffer[i] == SOH){
+      inconsistent = 1;
       break; // If there is another SOH in sequence
     }
   }
   
-  if(pid_end == -1) return -1;
+  if(pid_end == -1){
+    if(inconsistent == 1) overwrite_buffer(0, read_index, len);
+    return -2;
+  }
   
   // If there is a start of text
   if(stx_index != -1){
     // Searches the buffer for ETX
-    for(int i = stx_index+1;i < len;++i){
+    for(int i = stx_index+1;i < *len;++i){
+      read_index = i;
       if(buffer[i] == ETX){
         etx_index = i;
         break;
       }else if(buffer[i] == STX){
+        inconsistent = 1;
         break; // If there is another STX in sequence
       }
     }
-    if(etx_index == -1) return -1;
+    
+    if(etx_index == -1){
+      if(inconsistent == 1) overwrite_buffer(0, read_index, len);
+      return -3;
+    }
   }
   
   // Find PID
   pid_length = pid_end - pid_start + 1;
   
   // Check if it is possible to extract a PID
-  if(pid_length > 15) return -1;
-  
+  if(pid_length > 15){
+    overwrite_buffer(0, read_index, len);
+    return -4;
+  }
+
   // Get PID string
   strncpy(pid_string, buffer + pid_start, pid_length);
   pid_string[pid_length] = '\0';
@@ -293,11 +326,17 @@ static int extract_data(char *data, int *pid, int len){
   aux = strtol(pid_string, NULL, 10);
   
   // Check if there was no error in strtol
-  if(errno != 0) return -1;
+  if(errno != 0){
+    overwrite_buffer(0, read_index, len);
+    return -5;
+  }
   
   // Check if strtol has returned a valid PID integer
-  if(aux > 2147483647 || aux < 0) return -1; 
-  
+  if(aux > 2147483647 || aux < 0){
+    overwrite_buffer(0, read_index, len);
+    return -6;
+  }
+
   // Get PID integer
   *pid = (int)aux; 
 
@@ -306,24 +345,13 @@ static int extract_data(char *data, int *pid, int len){
     bytes_extracted =  (etx_index-1) - (stx_index+1) + 1;
     
     strncpy(data, buffer + stx_index + 1, bytes_extracted);
-    
-    msg_size += 2;
   }
   
   data[bytes_extracted] = '\0';
   
-  msg_size += pid_length + bytes_extracted;
-  
   // Overwrite the message from the buffer
-  int data_len = len - msg_size - soh_index;
-  char buffer_string[data_len+1];
-  
-  memcpy(buffer_string, buffer + soh_index + msg_size, data_len);
-  buffer_string[data_len] = '\0';
-  
-  memcpy(buffer, buffer_string, data_len);
-  buffer[data_len] = '\0';
-  
+  overwrite_buffer(0, read_index, len);
+
   return bytes_extracted;
 }
 
@@ -394,14 +422,8 @@ static int set_main_message(char *data, int pid){
   *pid_destination = pid;
   pthread_mutex_unlock(&msg_main->mutex_buffer);
   
-  // Overwrite Main thread buffer (append = 0)
-  ret_code = write_message(msg_main, data, 0);
-  
-  // Change msg_received
-  msg_main->msg_received = 1;
-  
-  // Signals that a message was received
-  ret_code = pthread_cond_signal(&msg_main->cond_received);
+  // Synchronously write data to the message
+  ret_code = swrite_message(msg_main, data);
   
   return ret_code;
 }

@@ -6,6 +6,10 @@
 // Size of Message struct buffer
 #define MSG_BUFFER_SIZE 1024
 
+/**
+ * @struct Message
+ * @brief Used to pass data between threads. Can be used synchronously or asynchronously
+ */
 typedef struct {
   char buffer[MSG_BUFFER_SIZE]; // Where the data received is stored
   int msg_received;             // Indicates if a message was received
@@ -24,23 +28,60 @@ typedef struct {
 */
 int init_message(Message *msg);
 
-//TODO: write a read function
-int read_message(Message *msg, char *data);
+/**
+* @brief Read an specified amount of data from the Message buffer 
+*
+* Given a Message, a char array and the size of the array, read size-1 bytes
+* from the Message buffer
+*
+* @param msg Pointer to the Message
+* @param data Pointer to the char array
+* @param size Size of the char array
+*
+* @return amount of bytes read
+*/
+int read_message(Message *msg, char *data, int size);
 
 /**
 * @brief Write data to the buffer of a Message
 *
-* Given a Message and a string, writes the string to the Messages buffer
-* using the mutex buffer. If append is set to 0, overwrites the data in 
-* the buffer, if append is set to 1, add the data to the end of the buffer
+* Given a Message and a string, writes the string to the Message buffer
 *
 * @param msg Pointer to the Message
 * @param data String to be written in the buffer
-* @param append Integer to select the append option
 *
 * @return 0 if sucessful, -1 if it is not
 */
-int write_message(Message *msg, char *data, int append);
+int write_message(Message *msg, char *data);
+
+/**
+* @brief Synchronously read an specified amount of data from the Message buffer
+*
+* Given a Message, a char array and the size of the array, read size-1 bytes
+* from the Message buffer only if there is new data to be read. Blocks until
+* there is new data
+*
+* @param msg Pointer to the Message
+* @param data Pointer to the char array
+* @param size Size of the char array
+*
+* @return amount of bytes read if sucessful, -1 if not
+*/
+int sread_message(Message *msg, char *data, int size);
+
+/**
+* @brief Synchronously write data to the buffer of a Message
+*
+* Given a Message and a string, writes the string to the Message buffer
+* only if there is no new data in the buffer. Blocks until there is new
+* data
+*
+* @param msg Pointer to the Message
+* @param data String to be written in the buffer
+*
+* @return 0 if sucessful, -1 if it is not
+*/
+int swrite_message(Message *msg, char *data);
 
 /**
 * @brief Close a Message

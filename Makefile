@@ -27,7 +27,7 @@ compile-all: $(OBJS)
 
 # Link everything and show sizes of memory segments
 $(TARGET).out: $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) -o $@
+	gcc $(CFLAGS) $(OBJS) -o $@
 
 # Build into a final executable
 .PHONY: build
@@ -36,6 +36,6 @@ build: $(TARGET).out
 # Cleaning all generated files
 .PHONY: clean
 clean:
-	rm -f *.i *.s *.o
+	rm -f src/*.i src/*.s src/*.o *.out
 
 
