@@ -1,6 +1,7 @@
 #include "communication_unit.h"
 #include "serial_communication.h"
 #include <errno.h>
+#include <math.h>
 #include <stdlib.h>
 
 //############################ STATIC VARIABLES ################################
@@ -136,6 +137,15 @@ void set_communication_pid(int *pid){
   pid_destination = pid;
 }
 
+int get_max_data_size(int pid){
+  int digit_number = 1;
+  
+  if(pid > 0) digit_number = (int)(log10(pid) + 1);
+  
+  // Subtract 4 to account for the 3 delimiters and the NULL character
+  return MSG_SIZE - digit_number - 4;
+}
+
 static void* receive_data(void *arg){
   int bytes_received, bytes_read, bytes_extracted, pid, len;
   char str_read[RECEIVE_BUFFER_SIZE], data[RECEIVE_BUFFER_SIZE];
@@ -143,11 +153,12 @@ static void* receive_data(void *arg){
   // Wait for data
   len = 0;
   bytes_read = 0;
-  
+ 
   while(listening){
+    usleep(25000);
     // Read from port
     if(len < RECEIVE_BUFFER_SIZE){
-      bytes_read = read_ascii_response(fd, str_read, RECEIVE_BUFFER_SIZE);
+      bytes_read = read_ascii_response(fd, str_read, RECEIVE_BUFFER_SIZE);       
     }
     
     if(bytes_read != -1 && bytes_read != 0){
@@ -164,7 +175,8 @@ static void* receive_data(void *arg){
     
     str_read[0] = '\0';
     
-    /*printf("\nLEN(%d):", len);
+    /*
+    printf("\nLEN(%d):", len);
     fwrite(buffer, 1, len, stdout);
     printf("\n");*/
 
@@ -207,7 +219,8 @@ int send_data(char *data, int pid){
   pthread_mutex_lock(&mutex_ack);
   pid_ack = pid;
   timeout = 0;
-  ack = 0;
+  // TODO: Implement ACK on the microcontroller
+  ack = 1;
   pthread_mutex_unlock(&mutex_ack);
   
   // Send msg to the microcontroller
@@ -378,7 +391,7 @@ static int build_msg(char *data, char *msg, int pid){
   if(ret_code < 0) return -1;
   
   // Check if the data will fit into the message
-  // Subtract for to account for the 3 delimiters plus the null terminator
+  // Subtract to account for the 3 delimiters plus the null terminator
   if(strlen(data) > MSG_SIZE - ret_code - 4) return -1;
   
   // Reset ret_code

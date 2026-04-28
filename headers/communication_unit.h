@@ -22,10 +22,11 @@
 // Timeout in ms for acknowledge
 #define ACK_TIMEOUT 1000
 
+// Size of the receive buffer
 #define RECEIVE_BUFFER_SIZE 4096
 
 // Amount of bytes the terminals send at time to the microcontroller
-#define MSG_SIZE 32
+#define MSG_SIZE 16
 
 /**
 * @brief Prepares the communication unit
@@ -36,9 +37,33 @@
 */
 int init_communication_unit();
 
+/**
+* @brief Set the message for the communication unit
+*
+* Set the message that the communication unit thread will put data into
+*
+* @return void
+*/
 void set_communication_msg(Message *msg);
 
+/**
+* @brief Set the PID pointer to indicate whats the destination PID of the message 
+*
+* Set the PID pointer to indicate whats the destination PID of the message
+*
+* @return void
+*/
 void set_communication_pid(int *pid);
+
+/**
+* @brief Get the maximum size of the data that can be transmitted with this PID 
+*
+* Get the maximum size of the data that can be transmitted with this PID based
+* on MSG_SIZE.
+*
+* @return void
+*/
+int get_max_data_size(int pid);
 
 /**
 * @brief Sends data to the microcontroller

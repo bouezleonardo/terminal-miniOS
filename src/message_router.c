@@ -50,14 +50,17 @@ int init_message_router(){
 static void* route_message(void *arg){
   // Input from the user to the Main thread
   char data[MSG_BUFFER_SIZE];
-  
+
   // Terminal message that will be written to
   Message *msg_terminal;
   
   // Return codes and pid
-  int msg_read, ret_code, read_pid, index;
+  int msg_read, ret_code, read_pid;
   
+  // Set the msg for receiving data from the communication unit
   set_communication_msg(&msg);
+  
+  // Set the pid for receiving pid of the destination of the message
   set_communication_pid(&read_pid);
   
   msg_read = -1;
@@ -67,19 +70,20 @@ static void* route_message(void *arg){
 
     // If a message was read
     if(msg_read != -1){
-      index = get_terminal_index(read_pid);
+      // Get terminal msg
+      msg_terminal = get_terminal_message(read_pid);
       
       // If no terminal with this PID was found
-      if(index == -1){
+      if(msg_terminal == NULL){
         // Request the Main thread to create the new terminal 
-        index = request_new_terminal(read_pid);
+        ret_code = request_new_terminal(read_pid);
         
         // If the terminal was not created
-        if(index == -1) continue;
+        if(ret_code != 0) continue;
+        
+        // Try to get terminal msg again
+        msg_terminal = get_terminal_message(read_pid);
       }
-      
-      // Get terminal msg
-      msg_terminal = get_terminal_message(index);
       
       // Set the message into the corresponding terminal
       if(msg_terminal != NULL) ret_code = write_message(msg_terminal, data);

@@ -9,25 +9,28 @@ TARGET = terminal
 # C code flags
 CFLAGS = -Wall #-Werror
 
+# Linker flags
+LDFLAGS = -lm -lncurses
+
 # Generate preprocessed files
 %.i : %.c
-	gcc -E $(CFLAGS) $(HEADERS) $< -o $@
+	gcc -E $(CFLAGS) $(HEADERS) $< -o $@ $(LDFLAGS)
 	
 # Generate assembly files
 %.s : %.c
-	gcc -S $(CFLAGS) $(HEADERS) $< -o $@
+	gcc -S $(CFLAGS) $(HEADERS) $< -o $@ $(LDFLAGS)
 
 # Generate object files (not linking)
 %.o : %.c
-	gcc -c $(CFLAGS) $(HEADERS) $< -o $@
+	gcc -c $(CFLAGS) $(HEADERS) $< -o $@ $(LDFLAGS)
 
 # Compile all (not linking)
 .PHONY: compile-all
 compile-all: $(OBJS)
 
-# Link everything and show sizes of memory segments
+# Link everything
 $(TARGET).out: $(OBJS)
-	gcc $(CFLAGS) $(OBJS) -o $@
+	gcc $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS)
 
 # Build into a final executable
 .PHONY: build

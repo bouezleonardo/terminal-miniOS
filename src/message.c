@@ -39,7 +39,10 @@ int read_message(Message *msg, char *data, int size){
   // Overwrite read data in the buffer
   memcpy(msg->buffer, msg->buffer+bytes_read, len-bytes_read);
   msg->buffer[len-bytes_read] = '\0';
-
+  
+  // Indicates the message was read
+  msg->msg_received = 0;
+  
   pthread_mutex_unlock(&msg->mutex_buffer);
   
   return bytes_read;
@@ -61,6 +64,9 @@ int write_message(Message *msg, char *data){
     return -1;
   }
   
+  // Indicates the message was written
+  msg->msg_received = 1;
+  
   memcpy(msg->buffer+len, data, strlen(data));
   msg->buffer[strlen(data)+len] = '\0';
 
@@ -75,9 +81,6 @@ int sread_message(Message *msg, char *data, int size){
   pthread_mutex_lock(&msg->mutex_buffer);
   // Wait if there is no message
   while(msg->msg_received == 0) pthread_cond_wait(&msg->cond_received, &msg->mutex_buffer);
-  
-  // Incates the message was read
-  msg->msg_received = 0;
   
   pthread_mutex_unlock(&msg->mutex_buffer);
   
@@ -97,9 +100,6 @@ int swrite_message(Message *msg, char *data){
   
   // Wait until the message is read
   while(msg->msg_received == 1) ret_code = pthread_cond_wait(&msg->cond_received, &msg->mutex_buffer);
-  
-  // Incates the data was written
-  msg->msg_received = 1;
   
   pthread_mutex_unlock(&msg->mutex_buffer);
   
